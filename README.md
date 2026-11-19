@@ -1,5 +1,11 @@
 # Day 11 — Controlled Agent Security (2026)
 
+> **Thông tin học viên:**
+> - **Họ và tên:** Phạm Nguyễn Tất Đạt
+> - **MSSV:** 2A202603401
+> - **Lớp:** K5-L3A (AI Kỹ sư Thực chiến Khóa 5)
+> - **Lựa chọn Red-team:** Red Agent mặc định (Mục tiêu Bonus B1: Leak Red thành công 5/5)
+
 > 👤 **Hình thức:** bài tập **cá nhân** (1 người / 1 MSSV).  
 > 🎯 **Mục tiêu:** đóng vai **Blue Team** để học cách xây Guardrails phòng thủ, rồi đóng vai **Red Team** để tấn công agent **Red** hoặc **Red Advance**.  
 > ✅ Làm theo **Checkpoint 1 → 5** trong [`CHECKPOINTS.md`](CHECKPOINTS.md) · nộp theo [`SUBMISSION.md`](SUBMISSION.md).

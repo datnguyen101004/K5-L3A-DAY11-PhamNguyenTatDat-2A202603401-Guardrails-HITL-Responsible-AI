@@ -51,14 +51,37 @@ def detect_injection(user_input: str) -> InputStatus:
     Returns:
         ``"BLOCK"`` if injection detected (chặn), ``"ALLOW"`` otherwise (cho qua).
     """
+    import unicodedata
+
+    # Canonicalize: NFKC + strip invisible/zero-width chars so that
+    # "Ignore\u200b all previous instructions" still matches.
+    normalized = unicodedata.normalize("NFKC", user_input)
+    normalized = re.sub(
+        r"[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff\u00ad]", "", normalized
+    )
+    normalized = re.sub(r"\s+", " ", normalized)
+
     INJECTION_PATTERNS = [
-        # TODO: Add at least 5 regex patterns
-        # Example:
-        # r"ignore (all )?(previous|above) instructions",
+        # 1. Ignore / disregard / forget previous instructions
+        r"\b(ignore|disregard|forget|override)\s+(all\s+|the\s+)?(previous|prior|above|earlier|preceding)\s+(instructions?|prompts?|rules?|guidelines?)\b",
+        # 2. "You are now ..." (DAN-style role switch)
+        r"\byou\s+are\s+now\b",
+        # 3. References to the system prompt itself
+        r"\bsystem\s+prompt\b",
+        # 4. Reveal / leak the instructions or prompt
+        r"\b(reveal|show|print|leak|expose|share|display|repeat)\s+(me\s+)?(your\s+|the\s+)?(system\s+)?(instructions?|prompt|system\s+prompt)\b",
+        # 5. Pretend / roleplay as something else
+        r"\bpretend\s+(you\s+are|to\s+be|that\s+you\s+are)\b",
+        # 6. Act as unrestricted / jailbroken persona
+        r"\bact\s+as\s+(a\s+|an\s+)?(unrestricted|jailbroken|evil|malicious|DAN)\b",
+        # 7. "Do anything now" / developer mode / no restrictions
+        r"\b(do\s+anything\s+now|developer\s+mode|god\s+mode|no\s+restrictions|without\s+any\s+restrictions)\b",
+        # 8. New instructions injected mid-conversation
+        r"\b(new|updated|actual)\s+instructions?\s*[:\-]",
     ]
 
     for pattern in INJECTION_PATTERNS:
-        if re.search(pattern, user_input, re.IGNORECASE):
+        if re.search(pattern, normalized, re.IGNORECASE):
             return "BLOCK"
     return "ALLOW"
 
@@ -74,6 +97,14 @@ def detect_injection(user_input: str) -> InputStatus:
 # Return ``"ALLOW"`` if banking-related and OK.
 # ============================================================
 
+def _fold(text: str) -> str:
+    """Lowercase + strip Vietnamese diacritics (NFKD) for tolerant matching."""
+    import unicodedata
+
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+
+
 def topic_filter(user_input: str) -> InputStatus:
     """Decide whether the input is on-topic for VinBank.
 
@@ -84,14 +115,21 @@ def topic_filter(user_input: str) -> InputStatus:
         ``"BLOCK"`` = chặn (off-topic hoặc topic cấm).
         ``"ALLOW"`` = cho qua (câu banking hợp lệ).
     """
-    input_lower = user_input.lower()
+    input_lower = _fold(user_input)
 
-    # TODO: Implement logic:
-    # 1. If input contains any blocked topic -> return "BLOCK"
-    # 2. If input doesn't contain any allowed topic -> return "BLOCK"
-    # 3. Otherwise -> return "ALLOW"
+    # 1. Blocked topic luôn thắng (kể cả khi có từ banking trong câu,
+    #    ví dụ "how to hack my bank account").
+    for topic in BLOCKED_TOPICS:
+        if re.search(r"\b" + re.escape(_fold(topic)) + r"\b", input_lower):
+            return "BLOCK"
 
-    pass  # Replace with your implementation
+    # 2. Phải có ít nhất một topic ngân hàng hợp lệ.
+    for topic in ALLOWED_TOPICS:
+        if _fold(topic) in input_lower:
+            return "ALLOW"
+
+    # 3. Không dính topic banking nào -> lạc đề.
+    return "BLOCK"
 
 
 # ============================================================
@@ -144,14 +182,22 @@ class InputGuardrailPlugin(base_plugin.BasePlugin):
         self.total_count += 1
         text = self._extract_text(user_message)
 
-        # TODO: Implement logic:
-        # 1. Call detect_injection(text)
-        #    - If "BLOCK": increment blocked_count, return self._block_response("...")
-        # 2. Call topic_filter(text)
-        #    - If "BLOCK": increment blocked_count, return self._block_response("...")
-        # 3. If both return "ALLOW": return None (let message through)
+        # 1. Prompt injection / jailbreak -> chặn trước khi tới LLM
+        if detect_injection(text) == "BLOCK":
+            self.blocked_count += 1
+            return self._block_response(
+                "Request blocked by input guardrail: potential prompt injection detected."
+            )
 
-        pass  # Replace with your implementation
+        # 2. Off-topic hoặc topic cấm -> chặn
+        if topic_filter(text) == "BLOCK":
+            self.blocked_count += 1
+            return self._block_response(
+                "Request blocked by input guardrail: outside VinBank banking scope."
+            )
+
+        # 3. Cả hai đều ALLOW -> cho qua (không gọi LLM thay thế)
+        return None
 
 
 # ============================================================
